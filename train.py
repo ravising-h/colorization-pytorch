@@ -2,18 +2,54 @@ import time
 from options.train_options import TrainOptions
 from models import create_model
 from util.visualizer import Visualizer
-
+from PIL import Image
+from torch.utils.data import Dataset, DataLoader
 import torch
 import torchvision
 import torchvision.transforms as transforms
 
 from util import util
 
+
+class Colorization_Dataset(Dataset):
+    """Colorization dataset."""
+
+    def __init__(self,  root_dir, transform=None):
+        """
+        Args:
+            root_dir (string): Directory with all the images.
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
+        self.root_dir = root_dir
+
+        if isinstance(self.root_dir, str):
+            self.root_dir = [self.root_dir]
+        self.transform = transform
+        self.path_to_images = list()
+        for path in self.root_dir:
+            fetch_full_path = lambda img_name,path: os.path.join(path, img_name) 
+            self.path_to_images += list(map(fetch_full_path, ( os.listdir(path))))
+
+    def __len__(self):
+        return len(self.path_to_images)
+
+    def __getitem__(self, idx):
+        idx = idx.tolist() if torch.is_tensor(idx) else idx
+
+        img_name = self.path_to_images[idx]
+        image = PIL.open(img_name)
+        
+        if self.transform:
+            sample = self.transform(sample)
+        return sample
+
+
 if __name__ == '__main__':
     opt = TrainOptions().parse()
 
     opt.dataroot = './dataset/ilsvrc2012/%s/' % opt.phase
-    dataset = torchvision.datasets.ImageFolder(opt.dataroot,
+    colorization_dataset = Colorization_Dataset(opt.dataroot,
                                                transform=transforms.Compose([
                                                    transforms.RandomChoice([transforms.Resize(opt.loadSize, interpolation=1),
                                                                             transforms.Resize(opt.loadSize, interpolation=2),
@@ -26,7 +62,7 @@ if __name__ == '__main__':
                                                                             transforms.RandomResizedCrop(opt.fineSize, interpolation=3)]),
                                                    transforms.RandomHorizontalFlip(),
                                                    transforms.ToTensor()]))
-    dataset_loader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size, shuffle=True, num_workers=int(opt.num_threads))
+    dataset_loader = torch.utils.data.DataLoader(colorization_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=int(opt.num_threads))
 
     dataset_size = len(dataset)
     print('#training images = %d' % dataset_size)
@@ -45,7 +81,7 @@ if __name__ == '__main__':
 
         # for i, data in enumerate(dataset):
         for i, data_raw in enumerate(dataset_loader):
-            data_raw[0] = data_raw[0].cuda()
+            data_raw = data_raw.cuda()
             data = util.get_colorization_data(data_raw, opt, p=opt.sample_p)
             if(data is None):
                 continue
